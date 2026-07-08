@@ -104,19 +104,16 @@ class BlueBoardDriver: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
         }
         
         delegate?.driverDidUpdateStatus("Scanning...")
-        centralManager.scanForPeripherals(withServices: nil, options: nil)
+        centralManager.scanForPeripherals(withServices: [serviceUUID], options: nil)
     }
     
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
-        let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? ""
-        if name.lowercased().contains("blueboard") {
-            print("Discovered BlueBoard: \(name) [\(peripheral.identifier)]. Connecting...")
-            delegate?.driverDidUpdateStatus("Connecting...")
-            centralManager.stopScan()
-            targetPeripheral = peripheral
-            targetPeripheral?.delegate = self
-            centralManager.connect(peripheral, options: nil)
-        }
+        print("Discovered BlueBoard: [\(peripheral.identifier)]. Connecting...")
+        delegate?.driverDidUpdateStatus("Connecting...")
+        centralManager.stopScan()
+        targetPeripheral = peripheral
+        targetPeripheral?.delegate = self
+        centralManager.connect(peripheral, options: nil)
     }
     
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
