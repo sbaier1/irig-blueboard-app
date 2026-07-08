@@ -337,10 +337,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
     var pedal1Label: NSTextField!
     var pedal1Indicator: NSProgressIndicator!
     var pedal1RangeLabel: NSTextField!
+    var pedal1InvertCheckbox: NSButton!
     
     var pedal2Label: NSTextField!
     var pedal2Indicator: NSProgressIndicator!
     var pedal2RangeLabel: NSTextField!
+    var pedal2InvertCheckbox: NSButton!
     
     // Calibration State
     var isCalibratingPedal1 = false
@@ -348,12 +350,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
     var tempMax1: UInt8 = 0
     var pedal1Min: UInt8 = 0
     var pedal1Max: UInt8 = 255
+    var isPedal1Inverted = false
     
     var isCalibratingPedal2 = false
     var tempMin2: UInt8 = 255
     var tempMax2: UInt8 = 0
     var pedal2Min: UInt8 = 0
     var pedal2Max: UInt8 = 255
+    var isPedal2Inverted = false
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         loadCalibrationSettings()
@@ -366,18 +370,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
         return true
     }
     
-    // MARK: - Persist Calibration Settings
+    // MARK: - Persist Calibration & Invert Settings
     func loadCalibrationSettings() {
         let defaults = UserDefaults.standard
         if let val = defaults.object(forKey: "pedal1Min") as? Int { pedal1Min = UInt8(val) } else { pedal1Min = 0 }
         if let val = defaults.object(forKey: "pedal1Max") as? Int { pedal1Max = UInt8(val) } else { pedal1Max = 255 }
+        isPedal1Inverted = defaults.bool(forKey: "pedal1Inverted")
+        
         if let val = defaults.object(forKey: "pedal2Min") as? Int { pedal2Min = UInt8(val) } else { pedal2Min = 0 }
         if let val = defaults.object(forKey: "pedal2Max") as? Int { pedal2Max = UInt8(val) } else { pedal2Max = 255 }
+        isPedal2Inverted = defaults.bool(forKey: "pedal2Inverted")
     }
     
     // MARK: - Build GUI Layout Programmatically
     func buildGUI() {
-        let width: CGFloat = 420
+        let width: CGFloat = 450
         let height: CGFloat = 380
         
         // Configure main Window
@@ -471,7 +478,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
         pedalsContainer.alignment = .leading
         pedalsContainer.spacing = 12
         pedalsContainer.translatesAutoresizingMaskIntoConstraints = false
-        pedalsContainer.widthAnchor.constraint(equalToConstant: 380).isActive = true
+        pedalsContainer.widthAnchor.constraint(equalToConstant: 410).isActive = true
         
         // Pedal 1 Row
         let p1Row = NSStackView()
@@ -491,21 +498,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
         pedal1Indicator.doubleValue = 0
         pedal1Indicator.style = .bar
         pedal1Indicator.translatesAutoresizingMaskIntoConstraints = false
-        pedal1Indicator.widthAnchor.constraint(equalToConstant: 110).isActive = true
+        pedal1Indicator.widthAnchor.constraint(equalToConstant: 100).isActive = true
         p1Row.addArrangedSubview(pedal1Indicator)
         
         pedal1RangeLabel = NSTextField(labelWithString: "Range: [\(pedal1Min) - \(pedal1Max)]")
         pedal1RangeLabel.font = NSFont.systemFont(ofSize: 11)
         pedal1RangeLabel.textColor = NSColor.secondaryLabelColor
         pedal1RangeLabel.translatesAutoresizingMaskIntoConstraints = false
-        pedal1RangeLabel.widthAnchor.constraint(equalToConstant: 85).isActive = true
+        pedal1RangeLabel.widthAnchor.constraint(equalToConstant: 90).isActive = true
         p1Row.addArrangedSubview(pedal1RangeLabel)
         
         let calBtn1 = NSButton(title: "Calibrate", target: self, action: #selector(calibratePedal1(_:)))
         calBtn1.bezelStyle = .rounded
         calBtn1.translatesAutoresizingMaskIntoConstraints = false
-        calBtn1.widthAnchor.constraint(equalToConstant: 65).isActive = true
+        calBtn1.widthAnchor.constraint(equalToConstant: 60).isActive = true
         p1Row.addArrangedSubview(calBtn1)
+        
+        pedal1InvertCheckbox = NSButton(checkboxWithTitle: "Invert", target: self, action: #selector(toggleInvertPedal1(_:)))
+        pedal1InvertCheckbox.state = isPedal1Inverted ? .on : .off
+        pedal1InvertCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        pedal1InvertCheckbox.widthAnchor.constraint(equalToConstant: 50).isActive = true
+        p1Row.addArrangedSubview(pedal1InvertCheckbox)
         
         pedalsContainer.addArrangedSubview(p1Row)
         
@@ -527,28 +540,47 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
         pedal2Indicator.doubleValue = 0
         pedal2Indicator.style = .bar
         pedal2Indicator.translatesAutoresizingMaskIntoConstraints = false
-        pedal2Indicator.widthAnchor.constraint(equalToConstant: 110).isActive = true
+        pedal2Indicator.widthAnchor.constraint(equalToConstant: 100).isActive = true
         p2Row.addArrangedSubview(pedal2Indicator)
         
         pedal2RangeLabel = NSTextField(labelWithString: "Range: [\(pedal2Min) - \(pedal2Max)]")
         pedal2RangeLabel.font = NSFont.systemFont(ofSize: 11)
         pedal2RangeLabel.textColor = NSColor.secondaryLabelColor
         pedal2RangeLabel.translatesAutoresizingMaskIntoConstraints = false
-        pedal2RangeLabel.widthAnchor.constraint(equalToConstant: 85).isActive = true
+        pedal2RangeLabel.widthAnchor.constraint(equalToConstant: 90).isActive = true
         p2Row.addArrangedSubview(pedal2RangeLabel)
         
         let calBtn2 = NSButton(title: "Calibrate", target: self, action: #selector(calibratePedal2(_:)))
         calBtn2.bezelStyle = .rounded
         calBtn2.translatesAutoresizingMaskIntoConstraints = false
-        calBtn2.widthAnchor.constraint(equalToConstant: 65).isActive = true
+        calBtn2.widthAnchor.constraint(equalToConstant: 60).isActive = true
         p2Row.addArrangedSubview(calBtn2)
+        
+        pedal2InvertCheckbox = NSButton(checkboxWithTitle: "Invert", target: self, action: #selector(toggleInvertPedal2(_:)))
+        pedal2InvertCheckbox.state = isPedal2Inverted ? .on : .off
+        pedal2InvertCheckbox.translatesAutoresizingMaskIntoConstraints = false
+        pedal2InvertCheckbox.widthAnchor.constraint(equalToConstant: 50).isActive = true
+        p2Row.addArrangedSubview(pedal2InvertCheckbox)
         
         pedalsContainer.addArrangedSubview(p2Row)
         
         mainStack.addArrangedSubview(pedalsContainer)
     }
     
-    // MARK: - Calibration Logic Targets
+    // MARK: - Invert Checkbox Actions
+    @objc func toggleInvertPedal1(_ sender: NSButton) {
+        isPedal1Inverted = (sender.state == .on)
+        UserDefaults.standard.set(isPedal1Inverted, forKey: "pedal1Inverted")
+        print("Pedal 1 Invert: \(isPedal1Inverted)")
+    }
+    
+    @objc func toggleInvertPedal2(_ sender: NSButton) {
+        isPedal2Inverted = (sender.state == .on)
+        UserDefaults.standard.set(isPedal2Inverted, forKey: "pedal2Inverted")
+        print("Pedal 2 Invert: \(isPedal2Inverted)")
+    }
+    
+    // MARK: - Calibration Actions
     @objc func calibratePedal1(_ sender: NSButton) {
         if !isCalibratingPedal1 {
             isCalibratingPedal1 = true
@@ -559,11 +591,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
         } else {
             isCalibratingPedal1 = false
             sender.title = "Calibrate"
-            if tempMax1 > tempMin1 || tempMax1 < tempMin1 { // Actual sweep happened
-                pedal1Min = tempMin1
-                pedal1Max = tempMax1
+            if tempMax1 != tempMin1 { // Actual sweep happened
+                if tempMin1 > tempMax1 {
+                    // Inverted sweep detected! Automatically check "Invert"
+                    pedal1Min = tempMax1
+                    pedal1Max = tempMin1
+                    isPedal1Inverted = true
+                } else {
+                    pedal1Min = tempMin1
+                    pedal1Max = tempMax1
+                    isPedal1Inverted = false
+                }
+                
                 UserDefaults.standard.set(Int(pedal1Min), forKey: "pedal1Min")
                 UserDefaults.standard.set(Int(pedal1Max), forKey: "pedal1Max")
+                UserDefaults.standard.set(isPedal1Inverted, forKey: "pedal1Inverted")
+                
+                pedal1InvertCheckbox.state = isPedal1Inverted ? .on : .off
             }
             pedal1RangeLabel.stringValue = "Range: [\(pedal1Min) - \(pedal1Max)]"
         }
@@ -579,11 +623,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
         } else {
             isCalibratingPedal2 = false
             sender.title = "Calibrate"
-            if tempMax2 > tempMin2 || tempMax2 < tempMin2 { // Actual sweep happened
-                pedal2Min = tempMin2
-                pedal2Max = tempMax2
+            if tempMax2 != tempMin2 { // Actual sweep happened
+                if tempMin2 > tempMax2 {
+                    // Inverted sweep detected! Automatically check "Invert"
+                    pedal2Min = tempMax2
+                    pedal2Max = tempMin2
+                    isPedal2Inverted = true
+                } else {
+                    pedal2Min = tempMin2
+                    pedal2Max = tempMax2
+                    isPedal2Inverted = false
+                }
+                
                 UserDefaults.standard.set(Int(pedal2Min), forKey: "pedal2Min")
                 UserDefaults.standard.set(Int(pedal2Max), forKey: "pedal2Max")
+                UserDefaults.standard.set(isPedal2Inverted, forKey: "pedal2Inverted")
+                
+                pedal2InvertCheckbox.state = isPedal2Inverted ? .on : .off
             }
             pedal2RangeLabel.stringValue = "Range: [\(pedal2Min) - \(pedal2Max)]"
         }
@@ -608,20 +664,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
         
         let pMin = (index == 0) ? pedal1Min : pedal2Min
         let pMax = (index == 0) ? pedal1Max : pedal2Max
+        let pInvert = (index == 0) ? isPedal1Inverted : isPedal2Inverted
         
         if pMin == pMax {
-            return UInt8(round(Double(rawValue) * 127.0 / 255.0))
+            let baseVal = UInt8(round(Double(rawValue) * 127.0 / 255.0))
+            return pInvert ? (127 - baseVal) : baseVal
         }
         
-        if pMin < pMax {
-            // Normal sweep (min value corresponds to 0, max corresponds to 127)
-            let clamped = Swift.max(pMin, Swift.min(pMax, rawValue))
-            let ratio = Double(clamped - pMin) / Double(pMax - pMin)
-            return UInt8(round(ratio * 127.0))
+        let clamped = Swift.max(pMin, Swift.min(pMax, rawValue))
+        let ratio = Double(clamped - pMin) / Double(pMax - pMin)
+        
+        if pInvert {
+            return UInt8(round((1.0 - ratio) * 127.0))
         } else {
-            // Swapped/Inverted sweep (min value corresponds to 0, max corresponds to 127)
-            let clamped = Swift.max(pMax, Swift.min(pMin, rawValue))
-            let ratio = Double(pMin - clamped) / Double(pMin - pMax)
             return UInt8(round(ratio * 127.0))
         }
     }
