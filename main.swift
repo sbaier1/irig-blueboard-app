@@ -34,8 +34,6 @@ class BlueBoardDriver: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
     let charRename        = CBUUID(string: "6B872736-F93E-4176-B3B1-143636CABB08")
     let charValidation    = CBUUID(string: "6B872736-F93E-4176-B3B1-143636CABB09")
     
-    // iRig BlueBoard Bluetooth UUID on this Mac
-    let targetIdentifier = UUID(uuidString: "78470840-2F77-2D88-A49A-5AD8FBCFD181")!
     
     // Handshake XOR key
     let xorKey: [UInt8] = [
@@ -110,8 +108,9 @@ class BlueBoardDriver: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
     }
     
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
-        if peripheral.identifier == targetIdentifier {
-            print("Discovered BlueBoard. Connecting...")
+        let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? ""
+        if name.lowercased().contains("blueboard") {
+            print("Discovered BlueBoard: \(name) [\(peripheral.identifier)]. Connecting...")
             delegate?.driverDidUpdateStatus("Connecting...")
             centralManager.stopScan()
             targetPeripheral = peripheral
