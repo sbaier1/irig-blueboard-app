@@ -11,6 +11,7 @@ protocol BlueBoardDriverDelegate: AnyObject {
     func driverDidUpdateBattery(_ battery: UInt8)
     func driverDidUpdateActiveSwitch(_ index: UInt8?)
     func driverDidUpdatePedal(index: UInt8, rawValue: UInt8, midiValue: UInt8)
+    func scalePedalValue(index: UInt8, rawValue: UInt8) -> UInt8
 }
 
 // MARK: - BlueBoard Driver Class
@@ -33,7 +34,6 @@ class BlueBoardDriver: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
     let charSynch         = CBUUID(string: "6B872736-F93E-4176-B3B1-143636CABB07")
     let charRename        = CBUUID(string: "6B872736-F93E-4176-B3B1-143636CABB08")
     let charValidation    = CBUUID(string: "6B872736-F93E-4176-B3B1-143636CABB09")
-    
     
     // Handshake XOR key
     let xorKey: [UInt8] = [
@@ -216,7 +216,7 @@ class BlueBoardDriver: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
             let pedalIndex = data[0]
             let valByte = data[1]
             
-            let midiVal = UInt8(round(Double(valByte) * 127.0 / 255.0))
+            let midiVal = delegate?.scalePedalValue(index: pedalIndex, rawValue: valByte) ?? UInt8(round(Double(valByte) * 127.0 / 255.0))
             let ccNumber: UInt8 = (pedalIndex == 0) ? 7 : 11
             sendControlChangeToAllChannels(cc: ccNumber, value: midiVal)
             
@@ -336,10 +336,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
     
     var pedal1Label: NSTextField!
     var pedal1Indicator: NSProgressIndicator!
+    var pedal1RangeLabel: NSTextField!
+    
     var pedal2Label: NSTextField!
     var pedal2Indicator: NSProgressIndicator!
+    var pedal2RangeLabel: NSTextField!
+    
+    // Calibration State
+    var isCalibratingPedal1 = false
+    var tempMin1: UInt8 = 255
+    var tempMax1: UInt8 = 0
+    var pedal1Min: UInt8 = 0
+    var pedal1Max: UInt8 = 255
+    
+    var isCalibratingPedal2 = false
+    var tempMin2: UInt8 = 255
+    var tempMax2: UInt8 = 0
+    var pedal2Min: UInt8 = 0
+    var pedal2Max: UInt8 = 255
     
     func applicationDidFinishLaunching(_ aNotification: Notification) {
+        loadCalibrationSettings()
         buildGUI()
         driver = BlueBoardDriver(delegate: self)
         NSApp.activate(ignoringOtherApps: true)
@@ -349,10 +366,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
         return true
     }
     
+    // MARK: - Persist Calibration Settings
+    func loadCalibrationSettings() {
+        let defaults = UserDefaults.standard
+        if let val = defaults.object(forKey: "pedal1Min") as? Int { pedal1Min = UInt8(val) } else { pedal1Min = 0 }
+        if let val = defaults.object(forKey: "pedal1Max") as? Int { pedal1Max = UInt8(val) } else { pedal1Max = 255 }
+        if let val = defaults.object(forKey: "pedal2Min") as? Int { pedal2Min = UInt8(val) } else { pedal2Min = 0 }
+        if let val = defaults.object(forKey: "pedal2Max") as? Int { pedal2Max = UInt8(val) } else { pedal2Max = 255 }
+    }
+    
     // MARK: - Build GUI Layout Programmatically
     func buildGUI() {
         let width: CGFloat = 420
-        let height: CGFloat = 340
+        let height: CGFloat = 380
         
         // Configure main Window
         let windowStyle: NSWindow.StyleMask = [.titled, .closable, .miniaturizable]
@@ -443,18 +469,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
         let pedalsContainer = NSStackView()
         pedalsContainer.orientation = .vertical
         pedalsContainer.alignment = .leading
-        pedalsContainer.spacing = 8
+        pedalsContainer.spacing = 12
         pedalsContainer.translatesAutoresizingMaskIntoConstraints = false
-        pedalsContainer.widthAnchor.constraint(equalToConstant: 340).isActive = true
+        pedalsContainer.widthAnchor.constraint(equalToConstant: 380).isActive = true
         
-        // Pedal 1
+        // Pedal 1 Row
         let p1Row = NSStackView()
         p1Row.orientation = .horizontal
         p1Row.spacing = 8
+        
         pedal1Label = NSTextField(labelWithString: "Pedal 1 (CC 7): --%")
         pedal1Label.font = NSFont.systemFont(ofSize: 12)
         pedal1Label.translatesAutoresizingMaskIntoConstraints = false
-        pedal1Label.widthAnchor.constraint(equalToConstant: 120).isActive = true
+        pedal1Label.widthAnchor.constraint(equalToConstant: 100).isActive = true
         p1Row.addArrangedSubview(pedal1Label)
         
         pedal1Indicator = NSProgressIndicator()
@@ -464,18 +491,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
         pedal1Indicator.doubleValue = 0
         pedal1Indicator.style = .bar
         pedal1Indicator.translatesAutoresizingMaskIntoConstraints = false
-        pedal1Indicator.widthAnchor.constraint(equalToConstant: 200).isActive = true
+        pedal1Indicator.widthAnchor.constraint(equalToConstant: 110).isActive = true
         p1Row.addArrangedSubview(pedal1Indicator)
+        
+        pedal1RangeLabel = NSTextField(labelWithString: "Range: [\(pedal1Min) - \(pedal1Max)]")
+        pedal1RangeLabel.font = NSFont.systemFont(ofSize: 11)
+        pedal1RangeLabel.textColor = NSColor.secondaryLabelColor
+        pedal1RangeLabel.translatesAutoresizingMaskIntoConstraints = false
+        pedal1RangeLabel.widthAnchor.constraint(equalToConstant: 85).isActive = true
+        p1Row.addArrangedSubview(pedal1RangeLabel)
+        
+        let calBtn1 = NSButton(title: "Calibrate", target: self, action: #selector(calibratePedal1(_:)))
+        calBtn1.bezelStyle = .rounded
+        calBtn1.translatesAutoresizingMaskIntoConstraints = false
+        calBtn1.widthAnchor.constraint(equalToConstant: 65).isActive = true
+        p1Row.addArrangedSubview(calBtn1)
+        
         pedalsContainer.addArrangedSubview(p1Row)
         
-        // Pedal 2
+        // Pedal 2 Row
         let p2Row = NSStackView()
         p2Row.orientation = .horizontal
         p2Row.spacing = 8
+        
         pedal2Label = NSTextField(labelWithString: "Pedal 2 (CC 11): --%")
         pedal2Label.font = NSFont.systemFont(ofSize: 12)
         pedal2Label.translatesAutoresizingMaskIntoConstraints = false
-        pedal2Label.widthAnchor.constraint(equalToConstant: 120).isActive = true
+        pedal2Label.widthAnchor.constraint(equalToConstant: 100).isActive = true
         p2Row.addArrangedSubview(pedal2Label)
         
         pedal2Indicator = NSProgressIndicator()
@@ -485,14 +527,105 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
         pedal2Indicator.doubleValue = 0
         pedal2Indicator.style = .bar
         pedal2Indicator.translatesAutoresizingMaskIntoConstraints = false
-        pedal2Indicator.widthAnchor.constraint(equalToConstant: 200).isActive = true
+        pedal2Indicator.widthAnchor.constraint(equalToConstant: 110).isActive = true
         p2Row.addArrangedSubview(pedal2Indicator)
+        
+        pedal2RangeLabel = NSTextField(labelWithString: "Range: [\(pedal2Min) - \(pedal2Max)]")
+        pedal2RangeLabel.font = NSFont.systemFont(ofSize: 11)
+        pedal2RangeLabel.textColor = NSColor.secondaryLabelColor
+        pedal2RangeLabel.translatesAutoresizingMaskIntoConstraints = false
+        pedal2RangeLabel.widthAnchor.constraint(equalToConstant: 85).isActive = true
+        p2Row.addArrangedSubview(pedal2RangeLabel)
+        
+        let calBtn2 = NSButton(title: "Calibrate", target: self, action: #selector(calibratePedal2(_:)))
+        calBtn2.bezelStyle = .rounded
+        calBtn2.translatesAutoresizingMaskIntoConstraints = false
+        calBtn2.widthAnchor.constraint(equalToConstant: 65).isActive = true
+        p2Row.addArrangedSubview(calBtn2)
+        
         pedalsContainer.addArrangedSubview(p2Row)
         
         mainStack.addArrangedSubview(pedalsContainer)
     }
     
+    // MARK: - Calibration Logic Targets
+    @objc func calibratePedal1(_ sender: NSButton) {
+        if !isCalibratingPedal1 {
+            isCalibratingPedal1 = true
+            tempMin1 = 255
+            tempMax1 = 0
+            sender.title = "Done"
+            pedal1RangeLabel.stringValue = "Sweep..."
+        } else {
+            isCalibratingPedal1 = false
+            sender.title = "Calibrate"
+            if tempMax1 > tempMin1 || tempMax1 < tempMin1 { // Actual sweep happened
+                pedal1Min = tempMin1
+                pedal1Max = tempMax1
+                UserDefaults.standard.set(Int(pedal1Min), forKey: "pedal1Min")
+                UserDefaults.standard.set(Int(pedal1Max), forKey: "pedal1Max")
+            }
+            pedal1RangeLabel.stringValue = "Range: [\(pedal1Min) - \(pedal1Max)]"
+        }
+    }
+    
+    @objc func calibratePedal2(_ sender: NSButton) {
+        if !isCalibratingPedal2 {
+            isCalibratingPedal2 = true
+            tempMin2 = 255
+            tempMax2 = 0
+            sender.title = "Done"
+            pedal2RangeLabel.stringValue = "Sweep..."
+        } else {
+            isCalibratingPedal2 = false
+            sender.title = "Calibrate"
+            if tempMax2 > tempMin2 || tempMax2 < tempMin2 { // Actual sweep happened
+                pedal2Min = tempMin2
+                pedal2Max = tempMax2
+                UserDefaults.standard.set(Int(pedal2Min), forKey: "pedal2Min")
+                UserDefaults.standard.set(Int(pedal2Max), forKey: "pedal2Max")
+            }
+            pedal2RangeLabel.stringValue = "Range: [\(pedal2Min) - \(pedal2Max)]"
+        }
+    }
+    
     // MARK: - Driver Delegate Implementations
+    func scalePedalValue(index: UInt8, rawValue: UInt8) -> UInt8 {
+        // Collect calibration points live in background if in calibration mode
+        if index == 0 && isCalibratingPedal1 {
+            tempMin1 = Swift.min(tempMin1, rawValue)
+            tempMax1 = Swift.max(tempMax1, rawValue)
+            DispatchQueue.main.async {
+                self.pedal1RangeLabel.stringValue = "Live: [\(self.tempMin1) - \(self.tempMax1)]"
+            }
+        } else if index == 1 && isCalibratingPedal2 {
+            tempMin2 = Swift.min(tempMin2, rawValue)
+            tempMax2 = Swift.max(tempMax2, rawValue)
+            DispatchQueue.main.async {
+                self.pedal2RangeLabel.stringValue = "Live: [\(self.tempMin2) - \(self.tempMax2)]"
+            }
+        }
+        
+        let pMin = (index == 0) ? pedal1Min : pedal2Min
+        let pMax = (index == 0) ? pedal1Max : pedal2Max
+        
+        if pMin == pMax {
+            return UInt8(round(Double(rawValue) * 127.0 / 255.0))
+        }
+        
+        if pMin < pMax {
+            // Normal sweep (min value corresponds to 0, max corresponds to 127)
+            let clamped = Swift.max(pMin, Swift.min(pMax, rawValue))
+            let ratio = Double(clamped - pMin) / Double(pMax - pMin)
+            return UInt8(round(ratio * 127.0))
+        } else {
+            // Swapped/Inverted sweep (min value corresponds to 0, max corresponds to 127)
+            let clamped = Swift.max(pMax, Swift.min(pMin, rawValue))
+            let ratio = Double(pMin - clamped) / Double(pMin - pMax)
+            return UInt8(round(ratio * 127.0))
+        }
+    }
+    
     func driverDidUpdateStatus(_ status: String) {
         DispatchQueue.main.async {
             self.statusLabel.stringValue = "Status: \(status)"
@@ -521,10 +654,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
         DispatchQueue.main.async {
             for i in 0..<4 {
                 if let index = index, i == Int(index) {
-                    // Bright blue when active
                     self.switchIndicators[i].backgroundColor = NSColor.systemBlue
                 } else {
-                    // Dark gray when inactive
                     self.switchIndicators[i].backgroundColor = NSColor.darkGray
                 }
             }
@@ -533,7 +664,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, BlueBoardDriverDelegate {
     
     func driverDidUpdatePedal(index: UInt8, rawValue: UInt8, midiValue: UInt8) {
         DispatchQueue.main.async {
-            let pct = Int(round(Double(rawValue) * 100.0 / 255.0))
+            let pct = Int(round(Double(midiValue) * 100.0 / 127.0))
             if index == 0 {
                 self.pedal1Label.stringValue = "Pedal 1 (CC 7): \(pct)%"
                 self.pedal1Indicator.doubleValue = Double(rawValue)
